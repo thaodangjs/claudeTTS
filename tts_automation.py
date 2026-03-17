@@ -205,38 +205,65 @@ class TTSAutomation:
         
         return chunks
     
-    def generate_audio_tiktok_single(self, text: str, tiktok_voice: str, progress_callback=None):
-        """Tạo audio cho một đoạn text ngắn"""
-        try:
-            url = "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/"
-            
-            params = {
-                "text_speaker": tiktok_voice,
-                "req_text": text,
-                "speaker_map_type": 0
-            }
-            
-            headers = {
-                "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
-                "Accept-Encoding": "gzip,deflate,compress"
-            }
-            
-            response = requests.post(url, params=params, headers=headers)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("status_code") == 0:
-                    audio_base64 = data.get("data", {}).get("v_str", "")
-                    if audio_base64:
-                        return base64.b64decode(audio_base64)
+    def generate_audio_tiktok_single(self, text: str, tiktok_voice: str, progress_callback=None, max_retries=3):
+        """Tạo audio cho một đoạn text ngắn với retry logic"""
+        url = "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/"
+        
+        for attempt in range(max_retries):
+            try:
+                params = {
+                    "text_speaker": tiktok_voice,
+                    "req_text": text,
+                    "speaker_map_type": 0
+                }
+                
+                headers = {
+                    "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
+                    "Accept-Encoding": "gzip,deflate,compress"
+                }
+                
+                response = requests.post(url, params=params, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status_code") == 0:
+                        audio_base64 = data.get("data", {}).get("v_str", "")
+                        if audio_base64:
+                            return base64.b64decode(audio_base64)
+                        else:
+                            raise ValueError("Không nhận được dữ liệu audio")
                     else:
-                        raise ValueError("Không nhận được dữ liệu audio")
+                        error_msg = data.get('status_msg', 'Unknown error')
+                        if attempt < max_retries - 1:
+                            if progress_callback:
+                                progress_callback(f"    ⚠ Lỗi: {error_msg}, thử lại...")
+                            time.sleep(2 * (attempt + 1))  # 2s, 4s, 6s
+                            continue
+                        raise ValueError(f"TikTok API error: {error_msg}")
                 else:
-                    raise ValueError(f"TikTok API error: {data.get('status_msg', 'Unknown error')}")
-            else:
-                raise ValueError(f"HTTP {response.status_code}")
-        except Exception as e:
-            raise e
+                    if attempt < max_retries - 1:
+                        if progress_callback:
+                            progress_callback(f"    ⚠ HTTP {response.status_code}, thử lại...")
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    raise ValueError(f"HTTP {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    if progress_callback:
+                        progress_callback(f"    ⚠ Timeout, thử lại...")
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise ValueError("Request timeout")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    if progress_callback:
+                        progress_callback(f"    ⚠ Lỗi: {e}, thử lại...")
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise e
+        
+        raise ValueError("Failed after all retries")
     
     def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
         """Tạo audio bằng TikTok TTS API - hỗ trợ text dài"""
@@ -270,7 +297,7 @@ class TTSAutomation:
                 if progress_callback:
                     progress_callback(f"  Đoạn {i+1}/{len(chunks)}...")
                 
-                audio_data = self.generate_audio_tiktok_single(chunk, tiktok_voice, progress_callback)
+                audio_data = self.generate_audio_tiktok_single(chunk, tiktok_voice, progress_callback, max_retries=3)
                 
                 # Lưu file tạm
                 temp_file = output_path.parent / f"temp_{output_path.stem}_{i}.mp3"
@@ -278,9 +305,9 @@ class TTSAutomation:
                     f.write(audio_data)
                 temp_files.append(temp_file)
                 
-                # Delay ngắn giữa các đoạn
+                # Delay lâu hơn giữa các đoạn để tránh bị chặn
                 if i < len(chunks) - 1:
-                    time.sleep(0.5)
+                    time.sleep(1.5)  # Tăng từ 0.5s lên 1.5s
             
             # Ghép bằng ffmpeg (nếu có) hoặc nối binary
             try:
