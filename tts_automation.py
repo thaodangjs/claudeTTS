@@ -18,7 +18,7 @@ import threading
 import edge_tts
 import boto3
 from botocore.client import Config
-from supabase import create_client, Client
+# from supabase import create_client, Client  # Tạm thời comment
 from gtts import gTTS
 import pyttsx3
 import requests
@@ -29,7 +29,8 @@ class TTSAutomation:
     def __init__(self):
         # TTS Engine (mặc định: edge-tts)
         self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3, tiktok, viettts
-        self.viettts_voice = "0"  # Giọng VietTTS (0=nữ mặc định)
+        self.viettts_voice_female = "0"  # Giọng VietTTS nữ mặc định
+        self.viettts_voice_male = "1"  # Giọng VietTTS nam mặc định
         
         # Cấu hình giọng đọc Edge-TTS tiếng Việt
         self.VOICE_MALE = "vi-VN-NamMinhNeural"
@@ -215,7 +216,7 @@ class TTSAutomation:
         
         return chunks
     
-    def generate_audio_viettts(self, text: str, output_path: Path, progress_callback=None):
+    def generate_audio_viettts(self, text: str, output_path: Path, progress_callback=None, voice=None):
         """Tạo audio bằng VietTTS local server (http://localhost:8298)
         Khởi động server trước: viettts server --host 0.0.0.0 --port 8298
         """
@@ -230,7 +231,7 @@ class TTSAutomation:
                 json={
                     "model": "tts-1",
                     "input": text,
-                    "voice": self.viettts_voice,
+                    "voice": voice or self.viettts_voice_female,
                     "speed": 1.0,
                     "response_format": "wav"
                 },
@@ -255,7 +256,7 @@ class TTSAutomation:
                 
                 if output_path.exists() and output_path.stat().st_size > 0:
                     if progress_callback:
-                        progress_callback(f"✓ Đã tạo (VietTTS giọng '{self.viettts_voice}'): {output_path.name} ({output_path.stat().st_size} bytes)")
+                        progress_callback(f"✓ Đã tạo (VietTTS giọng '{voice or self.viettts_voice_female}'): {output_path.name} ({output_path.stat().st_size} bytes)")
                     return True
                 return False
             else:
@@ -269,6 +270,23 @@ class TTSAutomation:
             if progress_callback:
                 progress_callback(f"⚠ VietTTS lỗi ({e}), dùng Google TTS...")
             return self.generate_audio_gtts(text, output_path, progress_callback)
+    
+    def generate_audio_gtts(self, text: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng Google TTS (gTTS)"""
+        try:
+            # gTTS chỉ hỗ trợ giọng nữ tiếng Việt
+            tts = gTTS(text=text, lang='vi', slow=False)
+            tts.save(str(output_path))
+            
+            if output_path.exists() and output_path.stat().st_size > 0:
+                if progress_callback:
+                    progress_callback(f"✓ Đã tạo (gTTS): {output_path.name} ({output_path.stat().st_size} bytes)")
+                return True
+            return False
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"✗ Lỗi gTTS: {e}")
+            return False
     
     def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
         """Tạo audio bằng TikTok TTS - nếu thất bại tự động fallback sang gTTS"""
@@ -426,14 +444,17 @@ class TTSAutomation:
             if progress_callback:
                 progress_callback(f"\n📖 Đang xử lý: {story_title} - Chương {chapter_num}")
             
-            # Engine chỉ có 1 giọng (gTTS, pyttsx3, viettts) - chỉ tạo female
-            single_voice_engines = {"gtts", "pyttsx3", "viettts"}
+            # Engine chỉ có 1 giọng (gTTS, pyttsx3) - chỉ tạo female
+            single_voice_engines = {"gtts", "pyttsx3"}
             is_single_voice = self.tts_engine in single_voice_engines
             
             if not is_single_voice:
                 if progress_callback:
                     progress_callback(f"🎙️ Tạo giọng nam...")
-                male_success = await self.generate_audio(full_content, self.VOICE_MALE, male_path, progress_callback)
+                if self.tts_engine == "viettts":
+                    male_success = await self.generate_audio_viettts(full_content, male_path, progress_callback, self.viettts_voice_male)
+                else:
+                    male_success = await self.generate_audio(full_content, self.VOICE_MALE, male_path, progress_callback)
                 if not male_success:
                     if progress_callback:
                         progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nam")
@@ -442,7 +463,10 @@ class TTSAutomation:
             
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nữ...")
-            female_success = await self.generate_audio(full_content, self.VOICE_FEMALE, female_path, progress_callback)
+            if self.tts_engine == "viettts":
+                female_success = await self.generate_audio_viettts(full_content, female_path, progress_callback, self.viettts_voice_female)
+            else:
+                female_success = await self.generate_audio(full_content, self.VOICE_FEMALE, female_path, progress_callback)
             if not female_success:
                 if progress_callback:
                     progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nữ")
@@ -531,24 +555,25 @@ class TTSAutomation:
     async def update_supabase(self, chapter_id: str, male_url: str, female_url: str):
         """Cập nhật URL audio vào Supabase"""
         try:
-            supabase: Client = create_client(
-                self.supabase_config["url"],
-                self.supabase_config["key"]
-            )
+            # supabase: Client = create_client(
+                # self.supabase_config["url"],
+                # self.supabase_config["key"]
+            # )
             
             # Thêm hoặc cập nhật audio nam
-            supabase.table("chapter_audios").upsert({
-                "chapter_id": chapter_id,
-                "voice": "male",
-                "audio_url": male_url
-            }, on_conflict="chapter_id,voice").execute()
+            # supabase.table("chapter_audios").upsert({
+                # "chapter_id": chapter_id,
+                # "voice": "male",
+                # "audio_url": male_url
+            # }, on_conflict="chapter_id,voice").execute()
             
             # Thêm hoặc cập nhật audio nữ
-            supabase.table("chapter_audios").upsert({
-                "chapter_id": chapter_id,
-                "voice": "female",
-                "audio_url": female_url
-            }, on_conflict="chapter_id,voice").execute()
+            # supabase.table("chapter_audios").upsert({
+                # "chapter_id": chapter_id,
+                # "voice": "female", 
+                # "audio_url": female_url
+            # }, on_conflict="chapter_id,voice").execute()
+            print(f"Supabase disabled - male: {male_url}, female: {female_url}")
             
         except Exception as e:
             print(f"Lỗi cập nhật Supabase: {e}")
@@ -632,45 +657,57 @@ class TTSAutomationGUI:
         
         ttk.Label(tts_frame, text="Chọn TTS Engine:", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W, pady=5)
         
-        self.tts_engine_var = tk.StringVar(value="edge-tts")
+        self.tts_engine_var = tk.StringVar(value="viettts")
         
-        engines = [
-            ("edge-tts", "Edge-TTS (Microsoft) - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị chặn IP"),
-            ("viettts", "VietTTS - Chất lượng rất tốt, giọng Việt tự nhiên, cần chạy local server ⭐"),
-            ("tiktok", "TikTok TTS - Thử TikTok, tự động chuyển sang Google TTS nếu cần ⚡"),
-            ("gtts", "Google TTS (gTTS) - Ổn định hơn, chỉ giọng nữ, chất lượng trung bình"),
-            ("pyttsx3", "pyttsx3 (Offline) - Hoàn toàn offline, chất lượng kém, giọng robot")
+        # VietTTS - Engine chính
+        ttk.Radiobutton(
+            tts_frame, 
+            text="VietTTS - Chất lượng rất tốt, giọng Việt tự nhiên ⭐ (Đang sử dụng)",
+            variable=self.tts_engine_var, 
+            value="viettts"
+        ).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
+        
+        # Các engine khác (thu gọn)
+        ttk.Label(tts_frame, text="━━━ Các engine khác (không khuyến nghị) ━━━", foreground="#999", font=("Arial", 8, "italic")).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(10,2), padx=20)
+        
+        other_engines = [
+            ("edge-tts", "Edge-TTS (Microsoft) - Dễ bị chặn IP"),
+            ("tiktok", "TikTok TTS - Không ổn định"),
+            ("gtts", "Google TTS - Chỉ giọng nữ"),
+            ("pyttsx3", "pyttsx3 - Giọng robot")
         ]
         
-        for i, (value, label) in enumerate(engines, start=1):
+        for i, (value, label) in enumerate(other_engines, start=3):
             ttk.Radiobutton(
                 tts_frame, 
                 text=label, 
                 variable=self.tts_engine_var, 
-                value=value
-            ).grid(row=i, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
+                value=value,
+                state=tk.NORMAL  # Có thể đổi thành tk.DISABLED để hoàn toàn vô hiệu hóa
+            ).grid(row=i, column=0, columnspan=2, sticky=tk.W, pady=1, padx=40)
         
         # VietTTS voice config
         viettts_config_frame = ttk.Frame(tts_frame)
         viettts_config_frame.grid(row=7, column=0, columnspan=2, sticky=tk.W, padx=20, pady=2)
-        ttk.Label(viettts_config_frame, text="VietTTS - Tên giọng:").pack(side=tk.LEFT)
-        self.viettts_voice_var = tk.StringVar(value="0")
-        ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_var, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Label(viettts_config_frame, text="(dùng: viettts show-voices để xem danh sách)", foreground="#666").pack(side=tk.LEFT)
+        
+        # Giọng nữ
+        ttk.Label(viettts_config_frame, text="VietTTS - Giọng nữ:").grid(row=0, column=0, sticky=tk.W)
+        self.viettts_voice_female_var = tk.StringVar(value="0")
+        ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_female_var, width=10).grid(row=0, column=1, padx=5)
+        
+        # Giọng nam
+        ttk.Label(viettts_config_frame, text="Giọng nam:").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
+        self.viettts_voice_male_var = tk.StringVar(value="1")
+        ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_male_var, width=10).grid(row=0, column=3, padx=5)
+        
+        ttk.Label(viettts_config_frame, text="(dùng: viettts show-voices để xem danh sách)", foreground="#666").grid(row=1, column=0, columnspan=4, sticky=tk.W)
         
         ttk.Label(
             tts_frame,
-            text="⚠ VietTTS cần: pip install viet-tts  và chạy: viettts server --host 0.0.0.0 --port 8298",
-            font=("Arial", 9, "italic"),
+            text="💡 Lưu ý: VietTTS server phải đang chạy (xem hướng dẫn bên dưới)",
+            font=("Arial", 9, "bold"),
             foreground="#0066cc"
-        ).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
-        
-        ttk.Label(
-            tts_frame, 
-            text="⚠ Khuyến nghị: VietTTS (chất lượng tốt nhất) hoặc Edge-TTS",
-            font=("Arial", 9, "italic"),
-            foreground="#666"
-        ).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
+        ).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
         
         # R2 Configuration
         r2_frame = ttk.LabelFrame(parent, text="Cloudflare R2 Configuration", padding=10)
@@ -883,7 +920,8 @@ class TTSAutomationGUI:
         
         # Áp dụng TTS engine đã chọn
         self.automation.tts_engine = self.tts_engine_var.get()
-        self.automation.viettts_voice = self.viettts_voice_var.get()
+        self.automation.viettts_voice_female = self.viettts_voice_female_var.get()
+        self.automation.viettts_voice_male = self.viettts_voice_male_var.get()
         
         # Disable buttons
         self.start_btn.config(state=tk.DISABLED)
@@ -951,7 +989,8 @@ class TTSAutomationGUI:
         try:
             config = {
                 "tts_engine": self.tts_engine_var.get(),
-                "viettts_voice": self.viettts_voice_var.get(),
+                "viettts_voice_female": self.viettts_voice_female_var.get(),
+                "viettts_voice_male": self.viettts_voice_male_var.get(),
                 "r2": {
                     "enabled": self.r2_enabled.get(),
                     "endpoint_url": self.r2_endpoint.get(),
@@ -987,8 +1026,10 @@ class TTSAutomationGUI:
                 # Load TTS engine
                 if "tts_engine" in config:
                     self.tts_engine_var.set(config.get("tts_engine", "edge-tts"))
-                if "viettts_voice" in config:
-                    self.viettts_voice_var.set(config.get("viettts_voice", "0"))
+                if "viettts_voice_female" in config:
+                    self.viettts_voice_female_var.set(config.get("viettts_voice_female", "0"))
+                if "viettts_voice_male" in config:
+                    self.viettts_voice_male_var.set(config.get("viettts_voice_male", "1"))
                 
                 # Load R2 config
                 if "r2" in config:
