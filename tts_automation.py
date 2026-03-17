@@ -17,9 +17,14 @@ import edge_tts
 import boto3
 from botocore.client import Config
 from supabase import create_client, Client
+from gtts import gTTS
+import pyttsx3
 
 class TTSAutomation:
     def __init__(self):
+        # TTS Engine (mặc định: edge-tts)
+        self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3
+        
         # Cấu hình giọng đọc Edge-TTS tiếng Việt
         self.VOICE_MALE = "vi-VN-NamMinhNeural"
         self.VOICE_FEMALE = "vi-VN-HoaiMyNeural"
@@ -108,24 +113,13 @@ class TTSAutomation:
             filename = filename[:100]
         return filename
     
-    async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
-        """Tạo file audio từ text với retry logic"""
-        # Làm sạch text
-        clean_text = self.clean_text_for_tts(text)
-        
-        if not clean_text:
-            if progress_callback:
-                progress_callback(f"✗ Text rỗng sau khi làm sạch")
-            return False
-        
-        # Retry logic cho Edge-TTS (tránh lỗi 403)
+    async def generate_audio_edge_tts(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
+        """Tạo audio bằng Edge-TTS"""
         for attempt in range(max_retries):
             try:
-                # Tạo audio với Edge-TTS
-                communicate = edge_tts.Communicate(clean_text, voice)
+                communicate = edge_tts.Communicate(text, voice)
                 await communicate.save(str(output_path))
                 
-                # Kiểm tra file đã được tạo
                 if output_path.exists() and output_path.stat().st_size > 0:
                     if progress_callback:
                         progress_callback(f"✓ Đã tạo: {output_path.name} ({output_path.stat().st_size} bytes)")
@@ -135,17 +129,74 @@ class TTSAutomation:
                     
             except Exception as e:
                 if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                    wait_time = (attempt + 1) * 2
                     if progress_callback:
                         progress_callback(f"⚠ Lỗi (thử lại {attempt + 1}/{max_retries}): {e}")
                         progress_callback(f"⏳ Chờ {wait_time}s trước khi thử lại...")
                     await asyncio.sleep(wait_time)
                 else:
                     if progress_callback:
-                        progress_callback(f"✗ Lỗi tạo audio sau {max_retries} lần thử: {e}")
+                        progress_callback(f"✗ Lỗi Edge-TTS sau {max_retries} lần thử: {e}")
                     return False
-        
         return False
+    
+    def generate_audio_gtts(self, text: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng Google TTS (gTTS)"""
+        try:
+            # gTTS chỉ hỗ trợ giọng nữ tiếng Việt
+            tts = gTTS(text=text, lang='vi', slow=False)
+            tts.save(str(output_path))
+            
+            if output_path.exists() and output_path.stat().st_size > 0:
+                if progress_callback:
+                    progress_callback(f"✓ Đã tạo (gTTS): {output_path.name} ({output_path.stat().st_size} bytes)")
+                return True
+            return False
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"✗ Lỗi gTTS: {e}")
+            return False
+    
+    def generate_audio_pyttsx3(self, text: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng pyttsx3 (Offline)"""
+        try:
+            engine = pyttsx3.init()
+            engine.save_to_file(text, str(output_path))
+            engine.runAndWait()
+            
+            if output_path.exists() and output_path.stat().st_size > 0:
+                if progress_callback:
+                    progress_callback(f"✓ Đã tạo (pyttsx3): {output_path.name} ({output_path.stat().st_size} bytes)")
+                return True
+            return False
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"✗ Lỗi pyttsx3: {e}")
+            return False
+    
+    async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
+        """Tạo file audio từ text - hỗ trợ nhiều engine"""
+        # Làm sạch text
+        clean_text = self.clean_text_for_tts(text)
+        
+        if not clean_text:
+            if progress_callback:
+                progress_callback(f"✗ Text rỗng sau khi làm sạch")
+            return False
+        
+        # Chọn engine theo cấu hình
+        if self.tts_engine == "edge-tts":
+            return await self.generate_audio_edge_tts(clean_text, voice, output_path, progress_callback, max_retries)
+        elif self.tts_engine == "gtts":
+            # gTTS không cần async
+            return self.generate_audio_gtts(clean_text, output_path, progress_callback)
+        elif self.tts_engine == "pyttsx3":
+            # pyttsx3 không cần async
+            return self.generate_audio_pyttsx3(clean_text, output_path, progress_callback)
+        else:
+            if progress_callback:
+                progress_callback(f"✗ TTS engine không hợp lệ: {self.tts_engine}")
+            return False
     
     async def process_chapter(self, story: Dict, chapter: Dict, progress_callback=None):
         """Xử lý một chương: tạo audio nam/nữ, upload R2, cập nhật Supabase"""
@@ -380,6 +431,35 @@ class TTSAutomationGUI:
     
     def setup_config_tab(self, parent):
         """Tab cấu hình R2 và Supabase"""
+        # TTS Engine Selection
+        tts_frame = ttk.LabelFrame(parent, text="TTS Engine (Chọn phương án chuyển giọng)", padding=10)
+        tts_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(tts_frame, text="Chọn TTS Engine:", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W, pady=5)
+        
+        self.tts_engine_var = tk.StringVar(value="edge-tts")
+        
+        engines = [
+            ("edge-tts", "Edge-TTS (Microsoft) - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị chặn IP"),
+            ("gtts", "Google TTS (gTTS) - Ổn định hơn, chỉ giọng nữ, chất lượng trung bình"),
+            ("pyttsx3", "pyttsx3 (Offline) - Hoàn toàn offline, chất lượng kém, giọng robot")
+        ]
+        
+        for i, (value, label) in enumerate(engines, start=1):
+            ttk.Radiobutton(
+                tts_frame, 
+                text=label, 
+                variable=self.tts_engine_var, 
+                value=value
+            ).grid(row=i, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
+        
+        ttk.Label(
+            tts_frame, 
+            text="⚠ Khuyến nghị: Edge-TTS (chính) + gTTS (dự phòng khi bị lỗi 403)",
+            font=("Arial", 9, "italic"),
+            foreground="#666"
+        ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
+        
         # R2 Configuration
         r2_frame = ttk.LabelFrame(parent, text="Cloudflare R2 Configuration", padding=10)
         r2_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -589,6 +669,9 @@ class TTSAutomationGUI:
         self.automation.delay_between_chapters = int(self.delay_chapters.get())
         self.automation.delay_between_voices = int(self.delay_voices.get())
         
+        # Áp dụng TTS engine đã chọn
+        self.automation.tts_engine = self.tts_engine_var.get()
+        
         # Disable buttons
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
@@ -654,6 +737,7 @@ class TTSAutomationGUI:
         """Lưu cấu hình hiện tại vào file"""
         try:
             config = {
+                "tts_engine": self.tts_engine_var.get(),
                 "r2": {
                     "enabled": self.r2_enabled.get(),
                     "endpoint_url": self.r2_endpoint.get(),
@@ -686,6 +770,10 @@ class TTSAutomationGUI:
         config = self.automation.load_config()
         if config:
             try:
+                # Load TTS engine
+                if "tts_engine" in config:
+                    self.tts_engine_var.set(config.get("tts_engine", "edge-tts"))
+                
                 # Load R2 config
                 if "r2" in config:
                     self.r2_enabled.set(config["r2"].get("enabled", False))
