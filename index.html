@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClaudeTTS – User Profile</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <span class="logo">🔊 ClaudeTTS</span>
+      <nav>
+        <a href="#">Dashboard</a>
+        <a href="#">History</a>
+        <a href="#" class="active">Profile</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="profile-card">
+      <div class="avatar-wrapper">
+        <img
+          src="https://api.dicebear.com/7.x/initials/svg?seed=TD&backgroundColor=4f46e5"
+          alt="User avatar"
+          class="avatar"
+          onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2288%22 height=%2288%22 viewBox=%220 0 88 88%22%3E%3Ccircle cx=%2244%22 cy=%2244%22 r=%2244%22 fill=%22%234f46e5%22/%3E%3Ctext x=%2244%22 y=%2250%22 text-anchor=%22middle%22 font-family=%22sans-serif%22 font-size=%2232%22 fill=%22%23fff%22%3ETD%3C/text%3E%3C/svg%3E'"
+        />
+        <button class="avatar-edit-btn" title="Change photo">✏️</button>
+      </div>
+
+      <div class="profile-info">
+        <h1 class="profile-name">Thao Dang</h1>
+        <p class="profile-email">thaodang@example.com</p>
+        <span class="badge">Pro Plan</span>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>Account Settings</h2>
+      <form id="profileForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="firstName">First Name</label>
+            <input id="firstName" type="text" value="Thao" placeholder="First name" />
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last Name</label>
+            <input id="lastName" type="text" value="Dang" placeholder="Last name" />
+          </div>
+          <div class="form-group full-width">
+            <label for="email">Email Address</label>
+            <input id="email" type="email" value="thaodang@example.com" placeholder="you@example.com" />
+          </div>
+        </div>
+
+        <h2>TTS Preferences</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="defaultVoice">Default Voice</label>
+            <select id="defaultVoice">
+              <option value="nova" selected>Nova (Female)</option>
+              <option value="echo">Echo (Male)</option>
+              <option value="alloy">Alloy (Neutral)</option>
+              <option value="shimmer">Shimmer (Female)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="defaultSpeed">Playback Speed</label>
+            <select id="defaultSpeed">
+              <option value="0.75">0.75×</option>
+              <option value="1.0" selected>1.0× (Normal)</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label for="outputFormat">Output Format</label>
+            <select id="outputFormat">
+              <option value="mp3" selected>MP3</option>
+              <option value="wav">WAV</option>
+              <option value="ogg">OGG</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="danger-zone">
+      <h2>Danger Zone</h2>
+      <div class="danger-row">
+        <div>
+          <strong>Delete Account</strong>
+          <p>Permanently remove your account and all associated data.</p>
+        </div>
+        <button id="deleteAccountBtn" class="btn btn-danger">Delete Account</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden">✅ Profile updated successfully!</div>
+
+  <script src="profile.js"></script>
+</body>
+</html>
