@@ -1,6 +1,5 @@
 boto3==1.34.34
 supabase==2.3.4
 requests
-
-# VietTTS - CHỈ SỬ DỤNG ENGINE NÀY
-# Cài VietTTS: cd viet-tts && pip install -e .
+edge-tts
+gTTS
