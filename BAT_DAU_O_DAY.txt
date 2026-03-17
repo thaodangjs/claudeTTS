@@ -1,0 +1,92 @@
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║          HƯỚNG DẪN SỬ DỤNG TTS AUTOMATION - VIETTTS         ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+📌 MỖI LẦN SỬ DỤNG, LÀM THEO 2 BƯỚC SAU:
+
+┌──────────────────────────────────────────────────────────────┐
+│  BƯỚC 1: KHỞI ĐỘNG VIETTTS SERVER                           │
+└──────────────────────────────────────────────────────────────┘
+
+   👉 Click đúp vào file: start_viettts.bat
+   
+   ⚠️  GIỮ CỬA SỔ NÀY MỞ trong suốt quá trình sử dụng!
+   
+   Khi thấy dòng:
+   "INFO: Uvicorn running on http://0.0.0.0:8298"
+   → Server đã sẵn sàng ✅
+
+
+┌──────────────────────────────────────────────────────────────┐
+│  BƯỚC 2: CHẠY PHẦN MỀM TTS AUTOMATION                       │
+└──────────────────────────────────────────────────────────────┘
+
+   👉 Click đúp vào file: start_app.bat
+   
+   Giao diện phần mềm sẽ mở ra.
+
+
+┌──────────────────────────────────────────────────────────────┐
+│  SỬ DỤNG PHẦN MỀM                                           │
+└──────────────────────────────────────────────────────────────┘
+
+   Tab 1 - Chọn truyện & chương:
+   • Chọn truyện từ danh sách bên trái
+   • Chọn các chương muốn tạo audio bên phải
+   
+   Tab 2 - Cấu hình:
+   • VietTTS đã được chọn sẵn ✅
+   • Giọng nữ: 5 (nu-nhe-nhang) ⭐
+   • Giọng nam: 4 (nguyen-ngoc-ngan) ⭐
+   
+   Tab 3 - Xử lý:
+   • Nhấn "🚀 Bắt đầu xử lý"
+   • Chờ đợi và theo dõi tiến độ
+   • File audio sẽ được lưu tại: audio_output/
+
+
+┌──────────────────────────────────────────────────────────────┐
+│  DANH SÁCH GIỌNG CÓ SẴN                                     │
+└──────────────────────────────────────────────────────────────┘
+
+   Giọng NỮ:
+   • 1 = cdteam
+   • 3 = diep-chi
+   • 5 = nu-nhe-nhang (khuyến nghị) ⭐
+   • 6 = quynh
+   
+   Giọng NAM:
+   • 4 = nguyen-ngoc-ngan (khuyến nghị) ⭐
+   • 7 = son-tung-mtp
+   
+   Giọng ĐẶC BIỆT:
+   • 21 = doremon
+   • 22 = jack-sparrow
+   • 23 = nsnd-le-chuc
+
+
+┌──────────────────────────────────────────────────────────────┐
+│  XỬ LÝ LỖI THƯỜNG GẶP                                       │
+└──────────────────────────────────────────────────────────────┘
+
+   ❌ "VietTTS server chưa chạy"
+   → Kiểm tra lại Bước 1, đảm bảo start_viettts.bat đang chạy
+   
+   ❌ "Port 8298 đã được sử dụng"
+   → File start_viettts.bat sẽ tự động xử lý
+   → Hoặc tắt terminal cũ và chạy lại
+   
+   ❌ Phần mềm không mở
+   → Kiểm tra Python đã cài đặt: python --version
+   → Cài thư viện: pip install -r requirements.txt
+
+
+═══════════════════════════════════════════════════════════════
+
+📖 Xem hướng dẫn chi tiết tại: HUONG_DAN_NHANH.md
+
+💡 Mẹo: Lưu cấu hình ở Tab 2 để lần sau không cần nhập lại!
+
+═══════════════════════════════════════════════════════════════
