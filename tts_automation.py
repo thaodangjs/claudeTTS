@@ -19,11 +19,13 @@ from botocore.client import Config
 from supabase import create_client, Client
 from gtts import gTTS
 import pyttsx3
+import requests
+import base64
 
 class TTSAutomation:
     def __init__(self):
         # TTS Engine (mặc định: edge-tts)
-        self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3
+        self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3, tiktok
         
         # Cấu hình giọng đọc Edge-TTS tiếng Việt
         self.VOICE_MALE = "vi-VN-NamMinhNeural"
@@ -174,6 +176,61 @@ class TTSAutomation:
                 progress_callback(f"✗ Lỗi pyttsx3: {e}")
             return False
     
+    def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng TikTok TTS API"""
+        try:
+            # TikTok TTS API endpoint
+            url = "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/"
+            
+            # Chọn giọng TikTok (tiếng Việt)
+            # voice options: vi_001 (nữ), vi_002 (nam), vi_003 (nữ trẻ)
+            tiktok_voice = "vi_001"  # Mặc định giọng nữ
+            if "male" in voice.lower() or "nam" in voice.lower():
+                tiktok_voice = "vi_002"
+            
+            # Gửi request
+            params = {
+                "text_speaker": tiktok_voice,
+                "req_text": text,
+                "speaker_map_type": 0
+            }
+            
+            headers = {
+                "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
+                "Accept-Encoding": "gzip,deflate,compress"
+            }
+            
+            response = requests.post(url, params=params, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status_code") == 0:
+                    # Decode base64 audio
+                    audio_base64 = data.get("data", {}).get("v_str", "")
+                    if audio_base64:
+                        audio_data = base64.b64decode(audio_base64)
+                        
+                        # Lưu file
+                        with open(output_path, "wb") as f:
+                            f.write(audio_data)
+                        
+                        if output_path.exists() and output_path.stat().st_size > 0:
+                            if progress_callback:
+                                progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
+                            return True
+                    else:
+                        raise ValueError("Không nhận được dữ liệu audio")
+                else:
+                    raise ValueError(f"TikTok API error: {data.get('status_msg', 'Unknown error')}")
+            else:
+                raise ValueError(f"HTTP {response.status_code}")
+            
+            return False
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"✗ Lỗi TikTok TTS: {e}")
+            return False
+    
     async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
         """Tạo file audio từ text - hỗ trợ nhiều engine"""
         # Làm sạch text
@@ -193,6 +250,9 @@ class TTSAutomation:
         elif self.tts_engine == "pyttsx3":
             # pyttsx3 không cần async
             return self.generate_audio_pyttsx3(clean_text, output_path, progress_callback)
+        elif self.tts_engine == "tiktok":
+            # TikTok TTS không cần async
+            return self.generate_audio_tiktok(clean_text, voice, output_path, progress_callback)
         else:
             if progress_callback:
                 progress_callback(f"✗ TTS engine không hợp lệ: {self.tts_engine}")
@@ -224,13 +284,17 @@ class TTSAutomation:
                     progress_callback(f"⚠ Chương {chapter_num} không có nội dung")
                 return False
             
+            # Thêm tiêu đề chương vào đầu nội dung để đọc
+            chapter_title_text = chapter.get("title", f"Chương {chapter_num}")
+            full_content = f"{chapter_title_text}. {content}"
+            
             if progress_callback:
                 progress_callback(f"\n📖 Đang xử lý: {story_title} - Chương {chapter_num}")
             
             # Tạo audio giọng nam
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nam...")
-            male_success = await self.generate_audio(content, self.VOICE_MALE, male_path, progress_callback)
+            male_success = await self.generate_audio(full_content, self.VOICE_MALE, male_path, progress_callback)
             
             if not male_success:
                 if progress_callback:
@@ -242,7 +306,7 @@ class TTSAutomation:
             # Tạo audio giọng nữ
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nữ...")
-            female_success = await self.generate_audio(content, self.VOICE_FEMALE, female_path, progress_callback)
+            female_success = await self.generate_audio(full_content, self.VOICE_FEMALE, female_path, progress_callback)
             
             if not female_success:
                 if progress_callback:
@@ -441,6 +505,7 @@ class TTSAutomationGUI:
         
         engines = [
             ("edge-tts", "Edge-TTS (Microsoft) - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị chặn IP"),
+            ("tiktok", "TikTok TTS - Chất lượng tốt, có giọng nam/nữ, ổn định, MIỄN PHÍ ⚡"),
             ("gtts", "Google TTS (gTTS) - Ổn định hơn, chỉ giọng nữ, chất lượng trung bình"),
             ("pyttsx3", "pyttsx3 (Offline) - Hoàn toàn offline, chất lượng kém, giọng robot")
         ]
@@ -455,10 +520,10 @@ class TTSAutomationGUI:
         
         ttk.Label(
             tts_frame, 
-            text="⚠ Khuyến nghị: Edge-TTS (chính) + gTTS (dự phòng khi bị lỗi 403)",
+            text="⚠ Khuyến nghị: TikTok TTS (ổn định nhất) hoặc Edge-TTS (chất lượng cao nhất)",
             font=("Arial", 9, "italic"),
             foreground="#666"
-        ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
+        ).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
         
         # R2 Configuration
         r2_frame = ttk.LabelFrame(parent, text="Cloudflare R2 Configuration", padding=10)

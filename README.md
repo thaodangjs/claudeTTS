@@ -6,9 +6,12 @@ Phần mềm Windows tự động chuyển đổi truyện ma thành file audio 
 
 ✅ **Nhiều phương án TTS miễn phí**
 
+- **TikTok TTS** ⚡ - Chất lượng tốt, giọng nam/nữ, ổn định nhất, MIỄN PHÍ
 - **Edge-TTS** (Microsoft) - Chất lượng tốt nhất, giọng nam/nữ tiếng Việt
 - **Google TTS (gTTS)** - Ổn định hơn, chỉ giọng nữ
 - **pyttsx3** - Hoàn toàn offline, không cần internet
+
+✅ **Đọc cả tiêu đề chương** - Audio tự động đọc tiêu đề trước nội dung
 
 ✅ **Giao diện thân thiện** - Dễ sử dụng, không cần kiến thức IT
 
@@ -68,7 +71,8 @@ python tts_automation.py
 **TTS Engine:**
 
 - Chọn phương án TTS phù hợp:
-  - **Edge-TTS** (Khuyến nghị) - Chất lượng tốt nhất, có giọng nam/nữ
+  - **TikTok TTS** ⚡ (Khuyến nghị) - Ổn định nhất, có giọng nam/nữ, MIỄN PHÍ
+  - **Edge-TTS** - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị lỗi 403
   - **gTTS** (Dự phòng) - Khi bị lỗi 403 từ Edge-TTS
   - **pyttsx3** (Offline) - Không cần internet, chất lượng thấp
 
