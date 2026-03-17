@@ -29,8 +29,8 @@ class TTSAutomation:
     def __init__(self):
         # TTS Engine (mặc định: edge-tts)
         self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3, tiktok, viettts
-        self.viettts_voice_female = "0"  # Giọng VietTTS nữ mặc định
-        self.viettts_voice_male = "1"  # Giọng VietTTS nam mặc định
+        self.viettts_voice_female = "5"  # Giọng VietTTS nữ (nu-nhe-nhang)
+        self.viettts_voice_male = "4"  # Giọng VietTTS nam (nguyen-ngoc-ngan)
         
         # Cấu hình giọng đọc Edge-TTS tiếng Việt
         self.VOICE_MALE = "vi-VN-NamMinhNeural"
@@ -692,15 +692,15 @@ class TTSAutomationGUI:
         
         # Giọng nữ
         ttk.Label(viettts_config_frame, text="VietTTS - Giọng nữ:").grid(row=0, column=0, sticky=tk.W)
-        self.viettts_voice_female_var = tk.StringVar(value="0")
+        self.viettts_voice_female_var = tk.StringVar(value="5")
         ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_female_var, width=10).grid(row=0, column=1, padx=5)
         
         # Giọng nam
         ttk.Label(viettts_config_frame, text="Giọng nam:").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
-        self.viettts_voice_male_var = tk.StringVar(value="1")
+        self.viettts_voice_male_var = tk.StringVar(value="4")
         ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_male_var, width=10).grid(row=0, column=3, padx=5)
         
-        ttk.Label(viettts_config_frame, text="(dùng: viettts show-voices để xem danh sách)", foreground="#666").grid(row=1, column=0, columnspan=4, sticky=tk.W)
+        ttk.Label(viettts_config_frame, text="(Nữ: 1,3,5,6 | Nam: 4,7 | Đặc biệt: 21,22,23)", foreground="#666").grid(row=1, column=0, columnspan=4, sticky=tk.W)
         
         ttk.Label(
             tts_frame,

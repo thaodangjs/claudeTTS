@@ -14,6 +14,7 @@ python -m uvicorn viettts.server:app --host 0.0.0.0 --port 8298
 **⚠️ Giữ terminal này mở** trong suốt quá trình sử dụng!
 
 Khi thấy dòng này là đã sẵn sàng:
+
 ```
 INFO:     Uvicorn running on http://0.0.0.0:8298
 ```
@@ -34,17 +35,25 @@ python tts_automation.py
 ## 🎯 Sử dụng phần mềm
 
 ### Tab 1 - Chọn truyện & chương
+
 1. Chọn truyện từ danh sách bên trái
 2. Chọn các chương muốn tạo audio bên phải
 3. Có thể dùng "Chọn tất cả"
 
 ### Tab 2 - Cấu hình
+
 - ✅ **VietTTS** đã được chọn sẵn
-- **Giọng nữ:** `0` (mặc định)
-- **Giọng nam:** `1` (mặc định)
-- Để xem danh sách giọng: `viettts show-voices`
+- **Giọng nữ:** `5` (khuyến nghị: nu-nhe-nhang - nhẹ nhàng)
+- **Giọng nam:** `4` (khuyến nghị: nguyen-ngoc-ngan - chuẩn)
+
+**Danh sách giọng có sẵn:**
+
+- Giọng nữ: `1` (cdteam), `3` (diep-chi), `5` (nu-nhe-nhang), `6` (quynh)
+- Giọng nam: `4` (nguyen-ngoc-ngan), `7` (son-tung-mtp)
+- Giọng đặc biệt: `21` (doremon), `22` (jack-sparrow), `23` (nsnd-le-chuc)
 
 ### Tab 3 - Xử lý
+
 - Nhấn **🚀 Bắt đầu xử lý**
 - Theo dõi tiến độ trong log
 - File audio sẽ được lưu tại: `audio_output/Ten_Truyen/`
@@ -54,11 +63,13 @@ python tts_automation.py
 ## 🎭 Tùy chỉnh giọng đọc
 
 ### Xem danh sách giọng:
+
 ```bash
 viettts show-voices
 ```
 
 ### Chọn giọng khác:
+
 - Vào **Tab 2 - Cấu hình**
 - Nhập số/tên giọng vào ô **Giọng nữ** và **Giọng nam**
 
@@ -67,6 +78,7 @@ viettts show-voices
 ## 📁 Kết quả
 
 File audio được lưu tại:
+
 ```
 audio_output/
   └── Ten_Truyen/
@@ -90,16 +102,20 @@ audio_output/
 ## 🆘 Xử lý lỗi thường gặp
 
 ### ❌ "VietTTS server chưa chạy"
+
 → Chạy lại Bước 1 (khởi động VietTTS server)
 
 ### ❌ "No module named 'viettts'"
+
 → Cài lại VietTTS:
+
 ```bash
 cd d:\Dev\Full-stack\ttByClaude\viet-tts
 pip install -e .
 ```
 
 ### ❌ Model tải lâu lần đầu
+
 → Bình thường, VietTTS tải model 1.26GB lần đầu tiên (chỉ 1 lần)
 
 ---
@@ -116,6 +132,7 @@ pip install -e .
 ```
 
 Cài các thư viện cho phần mềm:
+
 ```bash
 cd d:\Dev\Full-stack\ttByClaude
 pip install edge-tts boto3 gtts pyttsx3 websockets==12
