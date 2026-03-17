@@ -21,8 +21,7 @@ from gtts import gTTS
 import pyttsx3
 import requests
 import base64
-from pydub import AudioSegment
-import io
+import subprocess
 
 class TTSAutomation:
     def __init__(self):
@@ -253,32 +252,65 @@ class TTSAutomation:
             if progress_callback and len(chunks) > 1:
                 progress_callback(f"⏳ Chia thành {len(chunks)} đoạn...")
             
-            # Tạo audio cho từng đoạn
-            audio_segments = []
+            # Nếu chỉ có 1 đoạn, lưu trực tiếp
+            if len(chunks) == 1:
+                audio_data = self.generate_audio_tiktok_single(chunks[0], tiktok_voice, progress_callback)
+                with open(output_path, "wb") as f:
+                    f.write(audio_data)
+                
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    if progress_callback:
+                        progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
+                    return True
+                return False
+            
+            # Nếu nhiều đoạn, lưu tạm và ghép bằng ffmpeg
+            temp_files = []
             for i, chunk in enumerate(chunks):
-                if progress_callback and len(chunks) > 1:
+                if progress_callback:
                     progress_callback(f"  Đoạn {i+1}/{len(chunks)}...")
                 
                 audio_data = self.generate_audio_tiktok_single(chunk, tiktok_voice, progress_callback)
                 
-                # Convert binary data to AudioSegment
-                audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format="mp3")
-                audio_segments.append(audio_segment)
+                # Lưu file tạm
+                temp_file = output_path.parent / f"temp_{output_path.stem}_{i}.mp3"
+                with open(temp_file, "wb") as f:
+                    f.write(audio_data)
+                temp_files.append(temp_file)
                 
                 # Delay ngắn giữa các đoạn
                 if i < len(chunks) - 1:
                     time.sleep(0.5)
             
-            # Ghép các đoạn audio lại
-            if len(audio_segments) > 1:
-                combined = audio_segments[0]
-                for segment in audio_segments[1:]:
-                    combined += segment
-            else:
-                combined = audio_segments[0]
-            
-            # Lưu file
-            combined.export(str(output_path), format="mp3")
+            # Ghép bằng ffmpeg (nếu có) hoặc nối binary
+            try:
+                # Thử dùng ffmpeg
+                concat_file = output_path.parent / f"concat_{output_path.stem}.txt"
+                with open(concat_file, "w", encoding="utf-8") as f:
+                    for temp_file in temp_files:
+                        f.write(f"file '{temp_file.name}'\n")
+                
+                subprocess.run([
+                    "ffmpeg", "-f", "concat", "-safe", "0",
+                    "-i", str(concat_file),
+                    "-c", "copy", str(output_path)
+                ], check=True, capture_output=True)
+                
+                # Xóa file tạm
+                concat_file.unlink()
+                for temp_file in temp_files:
+                    temp_file.unlink()
+                    
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Nếu không có ffmpeg, nối binary (chất lượng kém hơn)
+                if progress_callback:
+                    progress_callback(f"⚠ Không có ffmpeg, nối trực tiếp...")
+                
+                with open(output_path, "wb") as outfile:
+                    for temp_file in temp_files:
+                        with open(temp_file, "rb") as infile:
+                            outfile.write(infile.read())
+                        temp_file.unlink()
             
             if output_path.exists() and output_path.stat().st_size > 0:
                 if progress_callback:
