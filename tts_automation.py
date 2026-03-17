@@ -523,10 +523,52 @@ class TTSAutomation:
             traceback.print_exc()
             return None
 
-    async def update_supabase(self, chapter_id: str, male_url: str, female_url: str):
-        """Cập nhật URL audio vào Supabase"""
+    async def update_supabase(self, chapter_id: str, male_url: Optional[str], female_url: Optional[str]):
+        """Ghi URL audio vào bảng chapter_audios.
+        Schema: chapter_audios(id, chapter_id, voice='male'|'female', audio_url, created_at, updated_at)
+        Chiến lược: DELETE cũ → INSERT mới (tránh duplicate do không có UNIQUE constraint).
+        """
         try:
-            print(f"Supabase disabled — male: {male_url}, female: {female_url}")
+            base_url = self.supabase_config["url"].rstrip("/")
+            key      = self.supabase_config["key"]
+
+            records = []
+            if male_url:
+                records.append({"chapter_id": chapter_id, "voice": "male",   "audio_url": male_url})
+            if female_url:
+                records.append({"chapter_id": chapter_id, "voice": "female", "audio_url": female_url})
+            if not records:
+                return
+
+            loop = asyncio.get_event_loop()
+
+            def _do():
+                headers = {
+                    "apikey":        key,
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type":  "application/json",
+                    "Prefer":        "return=minimal",
+                }
+                for rec in records:
+                    voice = rec["voice"]
+                    # Xóa record cũ để tránh duplicate
+                    requests.delete(
+                        f"{base_url}/rest/v1/chapter_audios",
+                        params={"chapter_id": f"eq.{chapter_id}", "voice": f"eq.{voice}"},
+                        headers=headers,
+                        timeout=15,
+                    )
+                    # Insert record mới
+                    resp = requests.post(
+                        f"{base_url}/rest/v1/chapter_audios",
+                        headers=headers,
+                        json=rec,
+                        timeout=15,
+                    )
+                    resp.raise_for_status()
+
+            await loop.run_in_executor(None, _do)
+
         except Exception as e:
             print(f"Lỗi cập nhật Supabase: {e}")
             raise
@@ -777,6 +819,8 @@ class TTSAutomationGUI:
         self._prog_bar.pack(fill=tk.X)
         self._prog_lbl = ttk.Label(pf, text="", font=("Arial", 9))
         self._prog_lbl.pack(anchor=tk.W)
+        self._eta_lbl = ttk.Label(pf, text="", font=("Arial", 9), foreground="#555")
+        self._eta_lbl.pack(anchor=tk.W)
 
         bf = ttk.Frame(parent)
         bf.pack(fill=tk.X, padx=8, pady=(0, 4))
@@ -1020,22 +1064,39 @@ class TTSAutomationGUI:
 
             self.root.after(0, lambda: self._prog_bar.configure(maximum=total, value=0))
 
-            success_count = 0
-            fail_count    = 0
+            success_count    = 0
+            fail_count       = 0
+            chapter_durations: list = []
 
             for idx, chapter in enumerate(chapters, 1):
                 if self._stop_event.is_set():
                     self.log("⏹ Đã dừng theo yêu cầu.")
                     break
 
-                self.root.after(0, lambda i=idx, t=total: self._prog_lbl.config(
-                    text=f"Đang xử lý {i}/{t}…"))
+                # ETA: ước tính thời gian còn lại dựa trên trung bình mỗi chương
+                if chapter_durations:
+                    avg_secs = sum(chapter_durations) / len(chapter_durations)
+                    eta_secs = avg_secs * (total - idx + 1)
+                    eta_str  = self._fmt_eta(eta_secs)
+                    self.root.after(0, lambda s=eta_str, i=idx, t=total: (
+                        self._prog_lbl.config(text=f"Đang xử lý {i}/{t}…"),
+                        self._eta_lbl.config(text=f"⏱ Còn lại ≈ {s}")
+                    ))
+                else:
+                    self.root.after(0, lambda i=idx, t=total: (
+                        self._prog_lbl.config(text=f"Đang xử lý {i}/{t}…"),
+                        self._eta_lbl.config(text="⏱ Đang tính thời gian…")
+                    ))
+
+                chapter_start = time.monotonic()
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 ok = loop.run_until_complete(
                     self.automation.process_chapter(story, chapter, self.log))
                 loop.close()
+
+                chapter_durations.append(time.monotonic() - chapter_start)
 
                 if ok:
                     success_count += 1
@@ -1068,10 +1129,22 @@ class TTSAutomationGUI:
         finally:
             self.root.after(0, self._reset_buttons)
 
+    @staticmethod
+    def _fmt_eta(seconds: float) -> str:
+        s = int(seconds)
+        h, rem = divmod(s, 3600)
+        m, s   = divmod(rem, 60)
+        if h > 0:
+            return f"{h}h {m:02d}m {s:02d}s"
+        if m > 0:
+            return f"{m}m {s:02d}s"
+        return f"{s}s"
+
     def _reset_buttons(self):
         self._start_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
         self._prog_lbl.config(text="")
+        self._eta_lbl.config(text="")
 
     # ------------------------------------------------------------------ Log
 
