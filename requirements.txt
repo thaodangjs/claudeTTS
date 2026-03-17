@@ -4,3 +4,4 @@ supabase==2.3.4
 tkinter-tooltip==2.1.0
 gTTS
 pyttsx3
+pydub

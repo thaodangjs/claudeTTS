@@ -21,6 +21,8 @@ from gtts import gTTS
 import pyttsx3
 import requests
 import base64
+from pydub import AudioSegment
+import io
 
 class TTSAutomation:
     def __init__(self):
@@ -176,19 +178,39 @@ class TTSAutomation:
                 progress_callback(f"✗ Lỗi pyttsx3: {e}")
             return False
     
-    def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
-        """Tạo audio bằng TikTok TTS API"""
+    def split_text_for_tiktok(self, text: str, max_length=300):
+        """Chia nhỏ text thành các đoạn ngắn cho TikTok TTS"""
+        # Chia theo câu (dấu chấm, chấm than, chấm hỏi)
+        sentences = re.split(r'([.!?。！？]+)', text)
+        
+        chunks = []
+        current_chunk = ""
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i]
+            delimiter = sentences[i + 1] if i + 1 < len(sentences) else ""
+            
+            if len(current_chunk) + len(sentence) + len(delimiter) <= max_length:
+                current_chunk += sentence + delimiter
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence + delimiter
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        # Nếu không có chunk nào, chia cứng theo độ dài
+        if not chunks:
+            chunks = [text[i:i+max_length] for i in range(0, len(text), max_length)]
+        
+        return chunks
+    
+    def generate_audio_tiktok_single(self, text: str, tiktok_voice: str, progress_callback=None):
+        """Tạo audio cho một đoạn text ngắn"""
         try:
-            # TikTok TTS API endpoint
             url = "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/"
             
-            # Chọn giọng TikTok (tiếng Việt)
-            # voice options: vi_001 (nữ), vi_002 (nam), vi_003 (nữ trẻ)
-            tiktok_voice = "vi_001"  # Mặc định giọng nữ
-            if "male" in voice.lower() or "nam" in voice.lower():
-                tiktok_voice = "vi_002"
-            
-            # Gửi request
             params = {
                 "text_speaker": tiktok_voice,
                 "req_text": text,
@@ -205,25 +227,63 @@ class TTSAutomation:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status_code") == 0:
-                    # Decode base64 audio
                     audio_base64 = data.get("data", {}).get("v_str", "")
                     if audio_base64:
-                        audio_data = base64.b64decode(audio_base64)
-                        
-                        # Lưu file
-                        with open(output_path, "wb") as f:
-                            f.write(audio_data)
-                        
-                        if output_path.exists() and output_path.stat().st_size > 0:
-                            if progress_callback:
-                                progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
-                            return True
+                        return base64.b64decode(audio_base64)
                     else:
                         raise ValueError("Không nhận được dữ liệu audio")
                 else:
                     raise ValueError(f"TikTok API error: {data.get('status_msg', 'Unknown error')}")
             else:
                 raise ValueError(f"HTTP {response.status_code}")
+        except Exception as e:
+            raise e
+    
+    def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng TikTok TTS API - hỗ trợ text dài"""
+        try:
+            # Chọn giọng TikTok (tiếng Việt)
+            tiktok_voice = "vi_001"  # Mặc định giọng nữ
+            if "male" in voice.lower() or "nam" in voice.lower():
+                tiktok_voice = "vi_002"
+            
+            # Chia nhỏ text nếu quá dài
+            chunks = self.split_text_for_tiktok(text, max_length=300)
+            
+            if progress_callback and len(chunks) > 1:
+                progress_callback(f"⏳ Chia thành {len(chunks)} đoạn...")
+            
+            # Tạo audio cho từng đoạn
+            audio_segments = []
+            for i, chunk in enumerate(chunks):
+                if progress_callback and len(chunks) > 1:
+                    progress_callback(f"  Đoạn {i+1}/{len(chunks)}...")
+                
+                audio_data = self.generate_audio_tiktok_single(chunk, tiktok_voice, progress_callback)
+                
+                # Convert binary data to AudioSegment
+                audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format="mp3")
+                audio_segments.append(audio_segment)
+                
+                # Delay ngắn giữa các đoạn
+                if i < len(chunks) - 1:
+                    time.sleep(0.5)
+            
+            # Ghép các đoạn audio lại
+            if len(audio_segments) > 1:
+                combined = audio_segments[0]
+                for segment in audio_segments[1:]:
+                    combined += segment
+            else:
+                combined = audio_segments[0]
+            
+            # Lưu file
+            combined.export(str(output_path), format="mp3")
+            
+            if output_path.exists() and output_path.stat().st_size > 0:
+                if progress_callback:
+                    progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
+                return True
             
             return False
         except Exception as e:
