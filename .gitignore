@@ -39,6 +39,9 @@ env/
 .env
 .env.local
 
+# Config file (chứa credentials)
+config.json
+
 # Audio output
 audio_output/
 *.mp3

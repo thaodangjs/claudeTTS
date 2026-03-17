@@ -28,6 +28,7 @@ class TTSAutomation:
         self.DATA_DIR = Path("myData")
         self.OUTPUT_DIR = Path("audio_output")
         self.OUTPUT_DIR.mkdir(exist_ok=True)
+        self.CONFIG_FILE = Path("config.json")
         
         # Dữ liệu
         self.stories: List[Dict] = []
@@ -54,6 +55,27 @@ class TTSAutomation:
         except Exception as e:
             print(f"Lỗi khi đọc dữ liệu: {e}")
             return False
+    
+    def save_config(self, config: Dict) -> bool:
+        """Lưu cấu hình vào file"""
+        try:
+            with open(self.CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"Lỗi khi lưu cấu hình: {e}")
+            return False
+    
+    def load_config(self) -> Optional[Dict]:
+        """Load cấu hình từ file"""
+        try:
+            if self.CONFIG_FILE.exists():
+                with open(self.CONFIG_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            return None
+        except Exception as e:
+            print(f"Lỗi khi load cấu hình: {e}")
+            return None
     
     def get_story_by_id(self, story_id: str) -> Optional[Dict]:
         """Lấy thông tin truyện theo ID"""
@@ -417,6 +439,13 @@ class TTSAutomationGUI:
         self.delay_voices = ttk.Spinbox(rate_frame, from_=0, to=10, width=10)
         self.delay_voices.set(1)
         self.delay_voices.grid(row=1, column=1, sticky=tk.W, pady=2, padx=5)
+        
+        # Nút lưu cấu hình
+        save_btn_frame = ttk.Frame(parent)
+        save_btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(save_btn_frame, text="💾 Lưu cấu hình", command=self.save_config_to_file).pack(side=tk.LEFT, padx=5)
+        ttk.Label(save_btn_frame, text="(Cấu hình sẽ được tự động load lần sau)", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=5)
     
     def setup_process_tab(self, parent):
         """Tab xử lý"""
@@ -458,12 +487,15 @@ class TTSAutomationGUI:
         ttk.Button(btn_frame, text="🗑️ Xóa log", command=self.clear_log).pack(side=tk.LEFT, padx=5)
     
     def load_initial_data(self):
-        """Load dữ liệu ban đầu"""
+        """Load dữ liệu ban đầu và cấu hình"""
         if self.automation.load_data():
             self.populate_stories()
             self.log("✓ Đã load dữ liệu thành công")
         else:
             messagebox.showerror("Lỗi", "Không thể load dữ liệu từ myData/")
+        
+        # Tự động load cấu hình nếu có
+        self.load_config_from_file()
     
     def populate_stories(self):
         """Hiển thị danh sách truyện"""
@@ -617,6 +649,66 @@ class TTSAutomationGUI:
         """Dừng xử lý"""
         # TODO: Implement stop logic
         messagebox.showinfo("Thông báo", "Tính năng dừng đang được phát triển")
+    
+    def save_config_to_file(self):
+        """Lưu cấu hình hiện tại vào file"""
+        try:
+            config = {
+                "r2": {
+                    "enabled": self.r2_enabled.get(),
+                    "endpoint_url": self.r2_endpoint.get(),
+                    "access_key_id": self.r2_access_key.get(),
+                    "secret_access_key": self.r2_secret_key.get(),
+                    "bucket_name": self.r2_bucket.get(),
+                    "public_url": self.r2_public_url.get()
+                },
+                "supabase": {
+                    "enabled": self.supabase_enabled.get(),
+                    "url": self.supabase_url.get(),
+                    "key": self.supabase_key.get()
+                },
+                "rate_limiting": {
+                    "delay_chapters": int(self.delay_chapters.get()),
+                    "delay_voices": int(self.delay_voices.get())
+                }
+            }
+            
+            if self.automation.save_config(config):
+                messagebox.showinfo("Thành công", "Cấu hình đã được lưu!\nLần sau mở phần mềm sẽ tự động load.")
+                self.log("💾 Đã lưu cấu hình vào config.json")
+            else:
+                messagebox.showerror("Lỗi", "Không thể lưu cấu hình")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Lỗi khi lưu cấu hình: {e}")
+    
+    def load_config_from_file(self):
+        """Load cấu hình từ file và điền vào form"""
+        config = self.automation.load_config()
+        if config:
+            try:
+                # Load R2 config
+                if "r2" in config:
+                    self.r2_enabled.set(config["r2"].get("enabled", False))
+                    self.r2_endpoint.insert(0, config["r2"].get("endpoint_url", ""))
+                    self.r2_access_key.insert(0, config["r2"].get("access_key_id", ""))
+                    self.r2_secret_key.insert(0, config["r2"].get("secret_access_key", ""))
+                    self.r2_bucket.insert(0, config["r2"].get("bucket_name", ""))
+                    self.r2_public_url.insert(0, config["r2"].get("public_url", ""))
+                
+                # Load Supabase config
+                if "supabase" in config:
+                    self.supabase_enabled.set(config["supabase"].get("enabled", False))
+                    self.supabase_url.insert(0, config["supabase"].get("url", ""))
+                    self.supabase_key.insert(0, config["supabase"].get("key", ""))
+                
+                # Load rate limiting
+                if "rate_limiting" in config:
+                    self.delay_chapters.set(config["rate_limiting"].get("delay_chapters", 3))
+                    self.delay_voices.set(config["rate_limiting"].get("delay_voices", 1))
+                
+                self.log("✓ Đã load cấu hình từ config.json")
+            except Exception as e:
+                self.log(f"⚠ Lỗi khi load cấu hình: {e}")
 
 
 def main():
