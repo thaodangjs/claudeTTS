@@ -28,7 +28,8 @@ import subprocess
 class TTSAutomation:
     def __init__(self):
         # TTS Engine (mặc định: edge-tts)
-        self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3, tiktok
+        self.tts_engine = "edge-tts"  # edge-tts, gtts, pyttsx3, tiktok, viettts
+        self.viettts_voice = "0"  # Giọng VietTTS (0=nữ mặc định)
         
         # Cấu hình giọng đọc Edge-TTS tiếng Việt
         self.VOICE_MALE = "vi-VN-NamMinhNeural"
@@ -214,6 +215,61 @@ class TTSAutomation:
         
         return chunks
     
+    def generate_audio_viettts(self, text: str, output_path: Path, progress_callback=None):
+        """Tạo audio bằng VietTTS local server (http://localhost:8298)
+        Khởi động server trước: viettts server --host 0.0.0.0 --port 8298
+        """
+        server_url = "http://localhost:8298"
+        try:
+            response = requests.post(
+                f"{server_url}/v1/audio/speech",
+                headers={
+                    "Authorization": "Bearer viet-tts",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "tts-1",
+                    "input": text,
+                    "voice": self.viettts_voice,
+                    "speed": 1.0,
+                    "response_format": "wav"
+                },
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                # Lưu WAV tạm, convert sang MP3 bằng ffmpeg nếu có
+                temp_wav = output_path.with_suffix('.wav')
+                with open(temp_wav, 'wb') as f:
+                    f.write(response.content)
+                
+                try:
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(temp_wav), str(output_path)],
+                        check=True, capture_output=True
+                    )
+                    temp_wav.unlink(missing_ok=True)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    # Không có ffmpeg - đổi tên WAV → MP3
+                    shutil.move(str(temp_wav), str(output_path))
+                
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    if progress_callback:
+                        progress_callback(f"✓ Đã tạo (VietTTS giọng '{self.viettts_voice}'): {output_path.name} ({output_path.stat().st_size} bytes)")
+                    return True
+                return False
+            else:
+                raise ValueError(f"VietTTS server trả về HTTP {response.status_code}")
+                
+        except requests.exceptions.ConnectionError:
+            if progress_callback:
+                progress_callback("⚠ VietTTS server chưa chạy, dùng Google TTS...")
+            return self.generate_audio_gtts(text, output_path, progress_callback)
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"⚠ VietTTS lỗi ({e}), dùng Google TTS...")
+            return self.generate_audio_gtts(text, output_path, progress_callback)
+    
     def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
         """Tạo audio bằng TikTok TTS - nếu thất bại tự động fallback sang gTTS"""
         tiktok_voice = "vi_001"
@@ -330,8 +386,9 @@ class TTSAutomation:
             # pyttsx3 không cần async
             return self.generate_audio_pyttsx3(clean_text, output_path, progress_callback)
         elif self.tts_engine == "tiktok":
-            # TikTok TTS không cần async
             return self.generate_audio_tiktok(clean_text, voice, output_path, progress_callback)
+        elif self.tts_engine == "viettts":
+            return self.generate_audio_viettts(clean_text, output_path, progress_callback)
         else:
             if progress_callback:
                 progress_callback(f"✗ TTS engine không hợp lệ: {self.tts_engine}")
@@ -369,8 +426,8 @@ class TTSAutomation:
             if progress_callback:
                 progress_callback(f"\n📖 Đang xử lý: {story_title} - Chương {chapter_num}")
             
-            # Engine chỉ có 1 giọng (gTTS, pyttsx3) - chỉ tạo female
-            single_voice_engines = {"gtts", "pyttsx3"}
+            # Engine chỉ có 1 giọng (gTTS, pyttsx3, viettts) - chỉ tạo female
+            single_voice_engines = {"gtts", "pyttsx3", "viettts"}
             is_single_voice = self.tts_engine in single_voice_engines
             
             if not is_single_voice:
@@ -579,6 +636,7 @@ class TTSAutomationGUI:
         
         engines = [
             ("edge-tts", "Edge-TTS (Microsoft) - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị chặn IP"),
+            ("viettts", "VietTTS - Chất lượng rất tốt, giọng Việt tự nhiên, cần chạy local server ⭐"),
             ("tiktok", "TikTok TTS - Thử TikTok, tự động chuyển sang Google TTS nếu cần ⚡"),
             ("gtts", "Google TTS (gTTS) - Ổn định hơn, chỉ giọng nữ, chất lượng trung bình"),
             ("pyttsx3", "pyttsx3 (Offline) - Hoàn toàn offline, chất lượng kém, giọng robot")
@@ -592,12 +650,27 @@ class TTSAutomationGUI:
                 value=value
             ).grid(row=i, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
         
+        # VietTTS voice config
+        viettts_config_frame = ttk.Frame(tts_frame)
+        viettts_config_frame.grid(row=7, column=0, columnspan=2, sticky=tk.W, padx=20, pady=2)
+        ttk.Label(viettts_config_frame, text="VietTTS - Tên giọng:").pack(side=tk.LEFT)
+        self.viettts_voice_var = tk.StringVar(value="0")
+        ttk.Entry(viettts_config_frame, textvariable=self.viettts_voice_var, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Label(viettts_config_frame, text="(dùng: viettts show-voices để xem danh sách)", foreground="#666").pack(side=tk.LEFT)
+        
+        ttk.Label(
+            tts_frame,
+            text="⚠ VietTTS cần: pip install viet-tts  và chạy: viettts server --host 0.0.0.0 --port 8298",
+            font=("Arial", 9, "italic"),
+            foreground="#0066cc"
+        ).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=2, padx=20)
+        
         ttk.Label(
             tts_frame, 
-            text="⚠ Khuyến nghị: TikTok TTS (ổn định nhất) hoặc Edge-TTS (chất lượng cao nhất)",
+            text="⚠ Khuyến nghị: VietTTS (chất lượng tốt nhất) hoặc Edge-TTS",
             font=("Arial", 9, "italic"),
             foreground="#666"
-        ).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
+        ).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5, padx=20)
         
         # R2 Configuration
         r2_frame = ttk.LabelFrame(parent, text="Cloudflare R2 Configuration", padding=10)
@@ -810,6 +883,7 @@ class TTSAutomationGUI:
         
         # Áp dụng TTS engine đã chọn
         self.automation.tts_engine = self.tts_engine_var.get()
+        self.automation.viettts_voice = self.viettts_voice_var.get()
         
         # Disable buttons
         self.start_btn.config(state=tk.DISABLED)
@@ -877,6 +951,7 @@ class TTSAutomationGUI:
         try:
             config = {
                 "tts_engine": self.tts_engine_var.get(),
+                "viettts_voice": self.viettts_voice_var.get(),
                 "r2": {
                     "enabled": self.r2_enabled.get(),
                     "endpoint_url": self.r2_endpoint.get(),
@@ -912,6 +987,8 @@ class TTSAutomationGUI:
                 # Load TTS engine
                 if "tts_engine" in config:
                     self.tts_engine_var.set(config.get("tts_engine", "edge-tts"))
+                if "viettts_voice" in config:
+                    self.viettts_voice_var.set(config.get("viettts_voice", "0"))
                 
                 # Load R2 config
                 if "r2" in config:
