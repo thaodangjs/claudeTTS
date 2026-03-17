@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 from pathlib import Path
 from typing import List, Dict, Optional
 import tkinter as tk
@@ -109,7 +110,14 @@ class TTSAutomation:
         return text
     
     def sanitize_filename(self, filename: str) -> str:
-        """Làm sạch tên file"""
+        """Làm sạch tên file: bỏ dấu, dùng underscore"""
+        # Xử lý riêng đ/Đ (không phân rã qua NFD)
+        filename = filename.replace('đ', 'd').replace('Đ', 'D')
+        # Xóa dấu tiếng Việt còn lại
+        filename = unicodedata.normalize('NFD', filename)
+        filename = ''.join(c for c in filename if unicodedata.category(c) != 'Mn')
+        # Khoảng trắng → underscore
+        filename = re.sub(r'\s+', '_', filename.strip())
         # Loại bỏ ký tự không hợp lệ
         filename = re.sub(r'[<>:"/\\|?*]', '', filename)
         # Giới hạn độ dài
@@ -334,13 +342,12 @@ class TTSAutomation:
         try:
             story_title = self.sanitize_filename(story["title"])
             chapter_num = chapter.get("chapter_number", 0)
-            chapter_title = self.sanitize_filename(chapter["title"])
             
             # Tạo thư mục cho truyện
             story_dir = self.OUTPUT_DIR / story_title
             story_dir.mkdir(exist_ok=True)
             
-            # Tên file: {story_slug}_chuong_{num}_{voice}.mp3
+            # Tên file không dấu: {story_title}_chuong_{num}_{voice}.mp3
             base_filename = f"{story_title}_chuong_{chapter_num:04d}"
             male_filename = f"{base_filename}_male.mp3"
             female_filename = f"{base_filename}_female.mp3"
@@ -362,23 +369,23 @@ class TTSAutomation:
             if progress_callback:
                 progress_callback(f"\n📖 Đang xử lý: {story_title} - Chương {chapter_num}")
             
-            # Tạo audio giọng nam
-            if progress_callback:
-                progress_callback(f"🎙️ Tạo giọng nam...")
-            male_success = await self.generate_audio(full_content, self.VOICE_MALE, male_path, progress_callback)
+            # Engine chỉ có 1 giọng (gTTS, pyttsx3) - chỉ tạo female
+            single_voice_engines = {"gtts", "pyttsx3"}
+            is_single_voice = self.tts_engine in single_voice_engines
             
-            if not male_success:
+            if not is_single_voice:
                 if progress_callback:
-                    progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nam")
-                return False
+                    progress_callback(f"🎙️ Tạo giọng nam...")
+                male_success = await self.generate_audio(full_content, self.VOICE_MALE, male_path, progress_callback)
+                if not male_success:
+                    if progress_callback:
+                        progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nam")
+                    return False
+                await asyncio.sleep(self.delay_between_voices)
             
-            await asyncio.sleep(self.delay_between_voices)
-            
-            # Tạo audio giọng nữ
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nữ...")
             female_success = await self.generate_audio(full_content, self.VOICE_FEMALE, female_path, progress_callback)
-            
             if not female_success:
                 if progress_callback:
                     progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nữ")
@@ -386,7 +393,8 @@ class TTSAutomation:
             
             # Thông báo file đã lưu local
             if progress_callback:
-                progress_callback(f"💾 File local: {male_path}")
+                if not is_single_voice:
+                    progress_callback(f"💾 File local: {male_path}")
                 progress_callback(f"💾 File local: {female_path}")
             
             # Upload lên R2 nếu đã cấu hình
@@ -397,28 +405,23 @@ class TTSAutomation:
                 if progress_callback:
                     progress_callback(f"☁️ Đang upload lên R2...")
                 
-                # Kiểm tra file tồn tại trước khi upload
-                if male_path.exists() and female_path.exists():
+                if not is_single_voice and male_path.exists():
                     male_url = await self.upload_to_r2(male_path, story_title, male_filename)
+                if female_path.exists():
                     female_url = await self.upload_to_r2(female_path, story_title, female_filename)
-                    
-                    if male_url and female_url:
-                        if progress_callback:
-                            progress_callback(f"✓ Đã upload lên R2")
-                    else:
-                        if progress_callback:
-                            progress_callback(f"⚠ Upload R2 thất bại")
+                
+                if female_url:
+                    if progress_callback:
+                        progress_callback(f"✓ Đã upload lên R2")
                 else:
                     if progress_callback:
-                        progress_callback(f"✗ File không tồn tại, bỏ qua upload R2")
+                        progress_callback(f"⚠ Upload R2 thất bại")
             
             # Cập nhật Supabase nếu đã cấu hình
-            if self.supabase_config.get("enabled") and male_url and female_url:
+            if self.supabase_config.get("enabled") and female_url:
                 if progress_callback:
                     progress_callback(f"💾 Đang cập nhật Supabase...")
-                
                 await self.update_supabase(chapter["id"], male_url, female_url)
-                
                 if progress_callback:
                     progress_callback(f"✓ Đã cập nhật Supabase")
             
