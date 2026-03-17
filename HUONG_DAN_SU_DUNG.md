@@ -1,6 +1,7 @@
 # Hướng dẫn sử dụng chi tiết - TTS Automation
 
 ## 📋 Mục lục
+
 1. [Cài đặt](#cài-đặt)
 2. [Cấu hình lần đầu](#cấu-hình-lần-đầu)
 3. [Sử dụng phần mềm](#sử-dụng-phần-mềm)
@@ -16,13 +17,16 @@
 **Download:** https://www.python.org/downloads/
 
 ⚠️ **QUAN TRỌNG:** Khi cài đặt Python:
+
 - ✅ Tick vào **"Add Python to PATH"**
 - ✅ Chọn **"Install Now"**
 
 **Kiểm tra cài đặt thành công:**
+
 ```bash
 python --version
 ```
+
 Kết quả: `Python 3.x.x`
 
 ### 2. Cài đặt thư viện
@@ -30,6 +34,7 @@ Kết quả: `Python 3.x.x`
 **Cách 1:** Click đúp vào file `install.bat`
 
 **Cách 2:** Mở Command Prompt tại thư mục dự án:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -43,6 +48,7 @@ pip install -r requirements.txt
 ### A. Cloudflare R2 (Tùy chọn - để upload audio lên cloud)
 
 #### Bước 1: Tạo R2 Bucket
+
 1. Đăng nhập Cloudflare Dashboard
 2. Sidebar → **R2 Object Storage**
 3. Click **"Create bucket"**
@@ -50,6 +56,7 @@ pip install -r requirements.txt
 5. Click **"Create bucket"**
 
 #### Bước 2: Tạo API Token
+
 1. Vào **R2** → **Manage R2 API Tokens**
 2. Click **"Create API Token"**
 3. Đặt tên: `TTS Automation`
@@ -61,11 +68,13 @@ pip install -r requirements.txt
    - Endpoint URL (dạng: `https://xxxxx.r2.cloudflarestorage.com`)
 
 #### Bước 3: Cấu hình Public Access (nếu muốn)
+
 1. Vào bucket vừa tạo → **Settings**
 2. **Public Access** → **Allow Access**
 3. Hoặc kết nối **Custom Domain** để có URL đẹp
 
 **Public URL mẫu:**
+
 - Mặc định: `https://pub-xxxxx.r2.dev`
 - Custom domain: `https://audio.yourdomain.com`
 
@@ -74,6 +83,7 @@ pip install -r requirements.txt
 ### B. Supabase (Tùy chọn - để lưu URL audio vào database)
 
 #### Bước 1: Lấy credentials
+
 1. Vào Supabase Dashboard
 2. Chọn project của bạn
 3. **Settings** → **API**
@@ -82,6 +92,7 @@ pip install -r requirements.txt
    - **anon public key** hoặc **service_role key** (khuyến nghị dùng service_role)
 
 #### Bước 2: Kiểm tra bảng chapter_audios
+
 Đảm bảo bảng `chapter_audios` đã tồn tại với cấu trúc:
 
 ```sql
@@ -107,6 +118,7 @@ CREATE TABLE chapter_audios (
 **Cách 1:** Click đúp vào `run.bat`
 
 **Cách 2:** Mở Command Prompt:
+
 ```bash
 python tts_automation.py
 ```
@@ -116,15 +128,18 @@ python tts_automation.py
 #### **📖 Tab 1: Chọn truyện & chương**
 
 **Bước 1:** Chọn truyện từ danh sách bên trái
+
 - Click vào tên truyện muốn xử lý
 - Danh sách chương sẽ tự động hiển thị bên phải
 
 **Bước 2:** Chọn chương cần xuất audio
+
 - Click vào chương để chọn (giữ Ctrl để chọn nhiều)
 - Hoặc dùng nút **"Chọn tất cả"** để chọn toàn bộ
 - Dùng **"Bỏ chọn tất cả"** để reset
 
 **Tips:**
+
 - Nên chia nhỏ batch, mỗi lần xử lý 10-20 chương
 - Tránh xử lý quá nhiều chương cùng lúc (tránh bị chặn IP)
 
@@ -133,6 +148,7 @@ python tts_automation.py
 #### **⚙️ Tab 2: Cấu hình**
 
 ##### Cloudflare R2
+
 - ☑️ Tick vào **"Bật upload lên R2"** (nếu muốn upload)
 - Điền thông tin từ bước cấu hình ở trên:
   - **Endpoint URL:** `https://xxxxx.r2.cloudflarestorage.com`
@@ -142,12 +158,14 @@ python tts_automation.py
   - **Public URL:** `https://pub-xxxxx.r2.dev` hoặc custom domain
 
 ##### Supabase
+
 - ☑️ Tick vào **"Bật cập nhật Supabase"** (nếu muốn lưu vào DB)
 - Điền thông tin:
   - **Supabase URL:** `https://xxxxx.supabase.co`
   - **Supabase Key:** `xxxxxxxxxxxxxx`
 
 ##### Rate Limiting
+
 - **Delay giữa các chương:** 3-5 giây (khuyến nghị)
   - Càng cao càng an toàn (tránh bị chặn)
   - Càng thấp càng nhanh (nhưng rủi ro cao hơn)
@@ -160,12 +178,14 @@ python tts_automation.py
 #### **🚀 Tab 3: Xử lý**
 
 **Bước 1:** Kiểm tra thông tin
+
 - Xem lại truyện đã chọn
 - Số lượng chương
 
 **Bước 2:** Nhấn **"🚀 Bắt đầu xử lý"**
 
 **Bước 3:** Theo dõi tiến độ
+
 - **Progress bar:** Hiển thị % hoàn thành
 - **Log:** Chi tiết từng bước xử lý
   - ✓ = Thành công
@@ -173,6 +193,7 @@ python tts_automation.py
   - ⚠ = Cảnh báo
 
 **Bước 4:** Chờ đợi
+
 - Phần mềm sẽ tự động:
   1. Tạo audio giọng nam
   2. Tạo audio giọng nữ
@@ -181,6 +202,7 @@ python tts_automation.py
   5. Chuyển sang chương tiếp theo
 
 **Thời gian ước tính:**
+
 - 1 chương: ~30-60 giây (tùy độ dài)
 - 10 chương: ~5-10 phút
 - 100 chương: ~1-2 giờ
@@ -190,6 +212,7 @@ python tts_automation.py
 ### 3. Kiểm tra kết quả
 
 #### File audio local
+
 ```
 audio_output/
 ├── Ma_cuon_chieu/
@@ -200,11 +223,13 @@ audio_output/
 ```
 
 #### Trên Cloudflare R2
+
 1. Vào R2 Dashboard → Bucket của bạn
 2. Thư mục: `audio/Tên_Truyện/`
 3. Kiểm tra file đã upload
 
 #### Trong Supabase
+
 1. Vào Table Editor → `chapter_audios`
 2. Kiểm tra records mới
 3. Verify `chapter_id`, `voice`, `audio_url` đúng
@@ -214,18 +239,22 @@ audio_output/
 ## Xử lý lỗi
 
 ### ❌ "python is not recognized"
+
 **Nguyên nhân:** Python chưa được thêm vào PATH
 
 **Giải pháp:**
+
 1. Gỡ cài đặt Python
 2. Cài lại và nhớ tick **"Add Python to PATH"**
 
 ---
 
 ### ❌ "Module not found: edge_tts"
+
 **Nguyên nhân:** Chưa cài thư viện
 
 **Giải pháp:**
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -233,9 +262,11 @@ pip install -r requirements.txt
 ---
 
 ### ❌ "Permission denied" khi upload R2
+
 **Nguyên nhân:** API Token không có quyền
 
 **Giải pháp:**
+
 1. Kiểm tra API Token có quyền **Object Read & Write**
 2. Tạo lại token mới nếu cần
 3. Kiểm tra bucket name đúng chưa
@@ -243,12 +274,15 @@ pip install -r requirements.txt
 ---
 
 ### ❌ "Supabase insert failed"
-**Nguyên nhân:** 
+
+**Nguyên nhân:**
+
 - Service key sai
 - RLS policy chặn
 - `chapter_id` không tồn tại
 
 **Giải pháp:**
+
 1. Kiểm tra Supabase URL và Key
 2. Tắt RLS cho bảng `chapter_audios` (hoặc cấu hình policy phù hợp)
 3. Verify `chapter_id` trong JSON có khớp với DB không
@@ -256,50 +290,69 @@ pip install -r requirements.txt
 ---
 
 ### ⚠️ Audio không rõ ràng
+
 **Nguyên nhân:** Nội dung chương có ký tự đặc biệt
 
 **Giải pháp:**
+
 - Phần mềm đã tự động làm sạch text
 - Nếu vẫn không rõ, kiểm tra log xem text đã được xử lý như thế nào
 
 ---
 
-### ⚠️ Bị chặn IP
-**Triệu chứng:** Lỗi liên tục khi tạo audio
+### ⚠️ Lỗi 403 từ Edge-TTS
+
+**Triệu chứng:** `403, message='Invalid response status'`
+
+**Nguyên nhân:**
+
+- Edge-TTS phát hiện quá nhiều request từ IP của bạn
+- Có thể do xử lý quá nhanh hoặc quá nhiều chương
 
 **Giải pháp:**
-1. Tăng delay giữa các chương lên 5-10 giây
-2. Dừng xử lý, chờ 10-15 phút
-3. Chia nhỏ batch, mỗi lần xử lý ít chương hơn
+
+1. **Tăng delay:** Vào Tab 2, tăng delay giữa chương lên 5-10 giây
+2. **Chờ đợi:** Dừng xử lý 15-30 phút để IP "nguội" lại
+3. **Chia nhỏ batch:** Xử lý 5-10 chương/lần thay vì 20-50 chương
+4. **Đổi mạng:** Thử đổi sang mạng khác (4G, VPN) nếu bị chặn lâu
+5. **Chạy ban đêm:** Ít người dùng Edge-TTS hơn, ít bị giới hạn hơn
+
+**Lưu ý:** Phần mềm đã tích hợp retry tự động (3 lần), nếu vẫn lỗi thì cần áp dụng các giải pháp trên
 
 ---
 
 ## Tips & Tricks
 
 ### 💡 Tối ưu tốc độ
+
 - Xử lý vào ban đêm (ít người dùng Edge-TTS hơn)
 - Chia nhỏ batch: 10-20 chương/lần
 - Delay hợp lý: 3 giây giữa chương
 
 ### 💡 Tiết kiệm dung lượng
+
 - Chỉ bật upload R2 khi cần
 - Xóa file local sau khi upload thành công
 - Nén file MP3 nếu cần (dùng tool khác)
 
 ### 💡 Bảo mật
+
 - Không share API keys/tokens
 - Dùng `.env` file để lưu credentials (đừng commit lên Git)
 - Định kỳ rotate API tokens
 
 ### 💡 Backup
+
 - Backup file JSON trong `myData/` thường xuyên
 - Export database Supabase định kỳ
 - Lưu file audio quan trọng ở nhiều nơi
 
 ### 💡 Xử lý số lượng lớn
+
 **Ví dụ:** 500 chương
 
 **Cách làm:**
+
 1. Chia thành 25 batch, mỗi batch 20 chương
 2. Xử lý mỗi batch, nghỉ 15-30 phút giữa các batch
 3. Chạy vào ban đêm, để máy tự động xử lý
@@ -329,6 +382,7 @@ A: Free plan có giới hạn 500MB database và 2GB bandwidth/tháng.
 ## Liên hệ & Hỗ trợ
 
 Nếu gặp vấn đề:
+
 1. Kiểm tra log trong Tab 3
 2. Đọc phần "Xử lý lỗi" ở trên
 3. Kiểm tra file JSON có đúng format không

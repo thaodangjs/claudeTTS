@@ -86,27 +86,44 @@ class TTSAutomation:
             filename = filename[:100]
         return filename
     
-    async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None):
-        """Tạo file audio từ text"""
-        try:
-            # Làm sạch text
-            clean_text = self.clean_text_for_tts(text)
-            
-            if not clean_text:
-                raise ValueError("Text rỗng sau khi làm sạch")
-            
-            # Tạo audio với Edge-TTS
-            communicate = edge_tts.Communicate(clean_text, voice)
-            await communicate.save(str(output_path))
-            
+    async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
+        """Tạo file audio từ text với retry logic"""
+        # Làm sạch text
+        clean_text = self.clean_text_for_tts(text)
+        
+        if not clean_text:
             if progress_callback:
-                progress_callback(f"✓ Đã tạo: {output_path.name}")
-            
-            return True
-        except Exception as e:
-            if progress_callback:
-                progress_callback(f"✗ Lỗi tạo audio: {e}")
+                progress_callback(f"✗ Text rỗng sau khi làm sạch")
             return False
+        
+        # Retry logic cho Edge-TTS (tránh lỗi 403)
+        for attempt in range(max_retries):
+            try:
+                # Tạo audio với Edge-TTS
+                communicate = edge_tts.Communicate(clean_text, voice)
+                await communicate.save(str(output_path))
+                
+                # Kiểm tra file đã được tạo
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    if progress_callback:
+                        progress_callback(f"✓ Đã tạo: {output_path.name} ({output_path.stat().st_size} bytes)")
+                    return True
+                else:
+                    raise ValueError("File không được tạo hoặc rỗng")
+                    
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                    if progress_callback:
+                        progress_callback(f"⚠ Lỗi (thử lại {attempt + 1}/{max_retries}): {e}")
+                        progress_callback(f"⏳ Chờ {wait_time}s trước khi thử lại...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    if progress_callback:
+                        progress_callback(f"✗ Lỗi tạo audio sau {max_retries} lần thử: {e}")
+                    return False
+        
+        return False
     
     async def process_chapter(self, story: Dict, chapter: Dict, progress_callback=None):
         """Xử lý một chương: tạo audio nam/nữ, upload R2, cập nhật Supabase"""
@@ -140,13 +157,29 @@ class TTSAutomation:
             # Tạo audio giọng nam
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nam...")
-            await self.generate_audio(content, self.VOICE_MALE, male_path, progress_callback)
+            male_success = await self.generate_audio(content, self.VOICE_MALE, male_path, progress_callback)
+            
+            if not male_success:
+                if progress_callback:
+                    progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nam")
+                return False
+            
             await asyncio.sleep(self.delay_between_voices)
             
             # Tạo audio giọng nữ
             if progress_callback:
                 progress_callback(f"🎙️ Tạo giọng nữ...")
-            await self.generate_audio(content, self.VOICE_FEMALE, female_path, progress_callback)
+            female_success = await self.generate_audio(content, self.VOICE_FEMALE, female_path, progress_callback)
+            
+            if not female_success:
+                if progress_callback:
+                    progress_callback(f"⚠ Bỏ qua chương {chapter_num} do lỗi tạo audio nữ")
+                return False
+            
+            # Thông báo file đã lưu local
+            if progress_callback:
+                progress_callback(f"💾 File local: {male_path}")
+                progress_callback(f"💾 File local: {female_path}")
             
             # Upload lên R2 nếu đã cấu hình
             male_url = None
@@ -156,11 +189,20 @@ class TTSAutomation:
                 if progress_callback:
                     progress_callback(f"☁️ Đang upload lên R2...")
                 
-                male_url = await self.upload_to_r2(male_path, story_title, male_filename)
-                female_url = await self.upload_to_r2(female_path, story_title, female_filename)
-                
-                if progress_callback:
-                    progress_callback(f"✓ Đã upload lên R2")
+                # Kiểm tra file tồn tại trước khi upload
+                if male_path.exists() and female_path.exists():
+                    male_url = await self.upload_to_r2(male_path, story_title, male_filename)
+                    female_url = await self.upload_to_r2(female_path, story_title, female_filename)
+                    
+                    if male_url and female_url:
+                        if progress_callback:
+                            progress_callback(f"✓ Đã upload lên R2")
+                    else:
+                        if progress_callback:
+                            progress_callback(f"⚠ Upload R2 thất bại")
+                else:
+                    if progress_callback:
+                        progress_callback(f"✗ File không tồn tại, bỏ qua upload R2")
             
             # Cập nhật Supabase nếu đã cấu hình
             if self.supabase_config.get("enabled") and male_url and female_url:
@@ -183,8 +225,13 @@ class TTSAutomation:
             return False
     
     async def upload_to_r2(self, file_path: Path, story_folder: str, filename: str) -> Optional[str]:
-        """Upload file lên Cloudflare R2"""
+        """Upload file lên Cloudflare R2 (tự động tạo 'thư mục' bằng prefix)"""
         try:
+            # Kiểm tra file tồn tại
+            if not file_path.exists():
+                print(f"Lỗi: File không tồn tại: {file_path}")
+                return None
+            
             s3 = boto3.client(
                 's3',
                 endpoint_url=self.r2_config["endpoint_url"],
@@ -193,9 +240,11 @@ class TTSAutomation:
                 config=Config(signature_version='s3v4')
             )
             
-            # Key: audio/{story_folder}/{filename}
+            # Key với prefix (S3 tự động tạo "thư mục" khi có /)
+            # Ví dụ: audio/Ma_cuon_chieu/Ma_cuon_chieu_chuong_0001_male.mp3
             key = f"audio/{story_folder}/{filename}"
             
+            # Upload file
             s3.upload_file(
                 str(file_path),
                 self.r2_config["bucket_name"],
