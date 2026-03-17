@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -205,150 +206,101 @@ class TTSAutomation:
         
         return chunks
     
-    def generate_audio_tiktok_single(self, text: str, tiktok_voice: str, progress_callback=None, max_retries=3):
-        """Tạo audio cho một đoạn text ngắn với retry logic"""
-        url = "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/"
-        
-        for attempt in range(max_retries):
-            try:
-                params = {
-                    "text_speaker": tiktok_voice,
-                    "req_text": text,
-                    "speaker_map_type": 0
-                }
-                
-                headers = {
-                    "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
-                    "Accept-Encoding": "gzip,deflate,compress"
-                }
-                
-                response = requests.post(url, params=params, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("status_code") == 0:
-                        audio_base64 = data.get("data", {}).get("v_str", "")
-                        if audio_base64:
-                            return base64.b64decode(audio_base64)
-                        else:
-                            raise ValueError("Không nhận được dữ liệu audio")
-                    else:
-                        error_msg = data.get('status_msg', 'Unknown error')
-                        if attempt < max_retries - 1:
-                            if progress_callback:
-                                progress_callback(f"    ⚠ Lỗi: {error_msg}, thử lại...")
-                            time.sleep(2 * (attempt + 1))  # 2s, 4s, 6s
-                            continue
-                        raise ValueError(f"TikTok API error: {error_msg}")
-                else:
-                    if attempt < max_retries - 1:
-                        if progress_callback:
-                            progress_callback(f"    ⚠ HTTP {response.status_code}, thử lại...")
-                        time.sleep(2 * (attempt + 1))
-                        continue
-                    raise ValueError(f"HTTP {response.status_code}")
-                    
-            except requests.exceptions.Timeout:
-                if attempt < max_retries - 1:
-                    if progress_callback:
-                        progress_callback(f"    ⚠ Timeout, thử lại...")
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                raise ValueError("Request timeout")
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    if progress_callback:
-                        progress_callback(f"    ⚠ Lỗi: {e}, thử lại...")
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                raise e
-        
-        raise ValueError("Failed after all retries")
-    
     def generate_audio_tiktok(self, text: str, voice: str, output_path: Path, progress_callback=None):
-        """Tạo audio bằng TikTok TTS API - hỗ trợ text dài"""
+        """Tạo audio bằng TikTok TTS - nếu thất bại tự động fallback sang gTTS"""
+        tiktok_voice = "vi_001"
+        if "male" in voice.lower() or "nam" in voice.lower():
+            tiktok_voice = "vi_002"
+        
+        # Thử TikTok endpoint với 1 request test đơn giản
         try:
-            # Chọn giọng TikTok (tiếng Việt)
-            tiktok_voice = "vi_001"  # Mặc định giọng nữ
-            if "male" in voice.lower() or "nam" in voice.lower():
-                tiktok_voice = "vi_002"
+            test_params = {
+                "text_speaker": tiktok_voice,
+                "req_text": "test",
+                "speaker_map_type": 0
+            }
+            test_headers = {
+                "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
+                "Accept-Encoding": "gzip,deflate,compress"
+            }
+            r = requests.post(
+                "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/",
+                params=test_params, headers=test_headers, timeout=5
+            )
+            data = r.json()
+            if data.get("status_code") != 0:
+                raise ValueError("TikTok API không hoạt động")
             
-            # Chia nhỏ text nếu quá dài
-            chunks = self.split_text_for_tiktok(text, max_length=300)
-            
+            # Nếu test OK, xử lý toàn bộ text
+            chunks = self.split_text_for_tiktok(text, max_length=200)
             if progress_callback and len(chunks) > 1:
                 progress_callback(f"⏳ Chia thành {len(chunks)} đoạn...")
             
-            # Nếu chỉ có 1 đoạn, lưu trực tiếp
-            if len(chunks) == 1:
-                audio_data = self.generate_audio_tiktok_single(chunks[0], tiktok_voice, progress_callback)
-                with open(output_path, "wb") as f:
-                    f.write(audio_data)
-                
-                if output_path.exists() and output_path.stat().st_size > 0:
-                    if progress_callback:
-                        progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
-                    return True
-                return False
-            
-            # Nếu nhiều đoạn, lưu tạm và ghép bằng ffmpeg
             temp_files = []
             for i, chunk in enumerate(chunks):
-                if progress_callback:
+                if progress_callback and len(chunks) > 1:
                     progress_callback(f"  Đoạn {i+1}/{len(chunks)}...")
-                
-                audio_data = self.generate_audio_tiktok_single(chunk, tiktok_voice, progress_callback, max_retries=3)
-                
-                # Lưu file tạm
+                params = {**test_params, "req_text": chunk}
+                resp = requests.post(
+                    "https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/",
+                    params=params, headers=test_headers, timeout=10
+                )
+                chunk_data = resp.json()
+                if chunk_data.get("status_code") != 0:
+                    raise ValueError(chunk_data.get("status_msg", "Lỗi API"))
+                audio_data = base64.b64decode(chunk_data["data"]["v_str"])
                 temp_file = output_path.parent / f"temp_{output_path.stem}_{i}.mp3"
                 with open(temp_file, "wb") as f:
                     f.write(audio_data)
                 temp_files.append(temp_file)
-                
-                # Delay lâu hơn giữa các đoạn để tránh bị chặn
                 if i < len(chunks) - 1:
-                    time.sleep(1.5)  # Tăng từ 0.5s lên 1.5s
+                    time.sleep(1)
             
-            # Ghép bằng ffmpeg (nếu có) hoặc nối binary
-            try:
-                # Thử dùng ffmpeg
-                concat_file = output_path.parent / f"concat_{output_path.stem}.txt"
-                with open(concat_file, "w", encoding="utf-8") as f:
-                    for temp_file in temp_files:
-                        f.write(f"file '{temp_file.name}'\n")
-                
-                subprocess.run([
-                    "ffmpeg", "-f", "concat", "-safe", "0",
-                    "-i", str(concat_file),
-                    "-c", "copy", str(output_path)
-                ], check=True, capture_output=True)
-                
-                # Xóa file tạm
-                concat_file.unlink()
-                for temp_file in temp_files:
-                    temp_file.unlink()
-                    
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                # Nếu không có ffmpeg, nối binary (chất lượng kém hơn)
-                if progress_callback:
-                    progress_callback(f"⚠ Không có ffmpeg, nối trực tiếp...")
-                
-                with open(output_path, "wb") as outfile:
-                    for temp_file in temp_files:
-                        with open(temp_file, "rb") as infile:
-                            outfile.write(infile.read())
-                        temp_file.unlink()
+            self._merge_audio_files(temp_files, output_path)
             
             if output_path.exists() and output_path.stat().st_size > 0:
                 if progress_callback:
                     progress_callback(f"✓ Đã tạo (TikTok): {output_path.name} ({output_path.stat().st_size} bytes)")
                 return True
+            return False
             
-            return False
-        except Exception as e:
+        except Exception:
+            # Dọn file tạm
+            for f in output_path.parent.glob(f"temp_{output_path.stem}_*.mp3"):
+                f.unlink(missing_ok=True)
+            
+            # Auto-fallback sang gTTS (không in lỗi dài dòng)
             if progress_callback:
-                progress_callback(f"✗ Lỗi TikTok TTS: {e}")
-            return False
+                progress_callback("⚠ TikTok không khả dụng, dùng Google TTS...")
+            return self.generate_audio_gtts(text, output_path, progress_callback)
+    
+    def _merge_audio_files(self, temp_files: list, output_path: Path):
+        """Ghép nhiều file MP3 thành một file"""
+        if len(temp_files) == 1:
+            shutil.move(str(temp_files[0]), str(output_path))
+            return
+        
+        try:
+            # Thử ffmpeg trước
+            concat_file = output_path.parent / f"concat_{output_path.stem}.txt"
+            with open(concat_file, "w", encoding="utf-8") as f:
+                for tf in temp_files:
+                    f.write(f"file '{tf.name}'\n")
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                 "-i", str(concat_file), "-c", "copy", str(output_path)],
+                check=True, capture_output=True, cwd=str(output_path.parent)
+            )
+            concat_file.unlink(missing_ok=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fallback: nối binary
+            with open(output_path, "wb") as outfile:
+                for tf in temp_files:
+                    with open(tf, "rb") as infile:
+                        outfile.write(infile.read())
+        finally:
+            for tf in temp_files:
+                tf.unlink(missing_ok=True)
     
     async def generate_audio(self, text: str, voice: str, output_path: Path, progress_callback=None, max_retries=3):
         """Tạo file audio từ text - hỗ trợ nhiều engine"""
@@ -624,7 +576,7 @@ class TTSAutomationGUI:
         
         engines = [
             ("edge-tts", "Edge-TTS (Microsoft) - Chất lượng tốt nhất, có giọng nam/nữ, dễ bị chặn IP"),
-            ("tiktok", "TikTok TTS - Chất lượng tốt, có giọng nam/nữ, ổn định, MIỄN PHÍ ⚡"),
+            ("tiktok", "TikTok TTS - Thử TikTok, tự động chuyển sang Google TTS nếu cần ⚡"),
             ("gtts", "Google TTS (gTTS) - Ổn định hơn, chỉ giọng nữ, chất lượng trung bình"),
             ("pyttsx3", "pyttsx3 (Offline) - Hoàn toàn offline, chất lượng kém, giọng robot")
         ]
