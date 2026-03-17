@@ -505,7 +505,12 @@ class TTSAutomation:
                                   s3={'addressing_style': 'path'}),
                     verify=False
                 )
-                key = f"audio/{story_folder}/{filename}"
+                # Build key with optional directory prefix
+                r2_dir = self.r2_config.get("directory", "").rstrip("/")
+                if r2_dir:
+                    key = f"{r2_dir}/{story_folder}/{filename}"
+                else:
+                    key = f"{story_folder}/{filename}"
                 content_type = 'audio/mpeg'
                 s3.upload_file(
                     str(file_path),
@@ -770,6 +775,7 @@ class TTSAutomationGUI:
             ("Secret Key:",    "_r2_sk", True),
             ("Bucket:",        "_r2_bk", False),
             ("Public URL:",    "_r2_pu", False),
+            ("Directory:",     "_r2_dir", False),
         ], 1):
             ttk.Label(r2f, text=lbl).grid(row=i, column=0, sticky=tk.W, pady=1)
             e = ttk.Entry(r2f, width=44, show="*" if hidden else "")
@@ -947,6 +953,7 @@ class TTSAutomationGUI:
                     "secret_access_key": self._r2_sk.get(),
                     "bucket_name":       self._r2_bk.get(),
                     "public_url":        self._r2_pu.get(),
+                    "directory":         self._r2_dir.get(),
                 },
                 "supabase": {
                     "enabled": self._sp_on.get(),
@@ -985,6 +992,7 @@ class TTSAutomationGUI:
             self._r2_sk.insert(0, r2.get("secret_access_key", ""))
             self._r2_bk.insert(0, r2.get("bucket_name", ""))
             self._r2_pu.insert(0, r2.get("public_url", ""))
+            self._r2_dir.insert(0, r2.get("directory", ""))
 
             sp = cfg.get("supabase", {})
             self._sp_on.set(sp.get("enabled", False))
@@ -1022,6 +1030,7 @@ class TTSAutomationGUI:
             "secret_access_key": self._r2_sk.get(),
             "bucket_name":       self._r2_bk.get(),
             "public_url":        self._r2_pu.get(),
+            "directory":         self._r2_dir.get(),
         }
         self.automation.supabase_config = {
             "enabled": self._sp_on.get(),
